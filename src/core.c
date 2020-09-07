@@ -1048,7 +1048,7 @@ core_init(void)
 
 #ifdef HAVE_SSL
 
-void
+int
 core_ssl_connect(Conn * s)
 {
 	Any_Type        arg;
@@ -1083,13 +1083,13 @@ core_ssl_connect(Conn * s)
 				clear_active(s, READ);
 				set_active(s, WRITE);
 			}
-			return;
+			return 0;
 		}
 		fprintf(stderr,
-			"%s: failed to connect to SSL server (err=%d, reason=%d)\n",
-			prog_name, ssl_err, reason);
+			"%s: failed to connect to SSL server (err=%d, reason=%d, errno=%d)\n",
+			prog_name, ssl_err, reason, errno);
 		ERR_print_errors_fp(stderr);
-		exit(-1);
+		return -1;
 	}
 
 	s->state = S_CONNECTED;
@@ -1114,6 +1114,7 @@ core_ssl_connect(Conn * s)
 
 	arg.l = 0;
 	event_signal(EV_CONN_CONNECTED, (Object *) s, arg);
+	return 0;
 }
 
 #endif /* HAVE_SSL */
@@ -1267,7 +1268,12 @@ core_connect(Conn * s)
 	if (result == 0) {
 #ifdef HAVE_SSL
 		if (param.use_ssl)
-			core_ssl_connect(s);
+		{
+		    if (core_ssl_connect(s) < 0)
+		    {
+			goto failure;
+		    }
+		}
 		else
 #endif
 		{
@@ -1508,7 +1514,13 @@ core_loop(void)
 	                if (conn->state == S_CONNECTING) {
 #ifdef HAVE_SSL
 	                    if (param.use_ssl)
-	                        core_ssl_connect(conn);
+			    {
+	                        if (core_ssl_connect(conn) < 0)
+				{
+				    conn_failure(conn, errno);
+				    break;
+				}
+		   	    }
 	                    else
 #endif
 	                    if (ev.filter == EVFILT_WRITE) {
@@ -1561,7 +1573,13 @@ core_loop(void)
 			if (conn->state == S_CONNECTING) {
 #ifdef HAVE_SSL
 				if (param.use_ssl)
-					core_ssl_connect(conn);
+				{
+	                            if (core_ssl_connect(conn) < 0)
+				    {
+				        conn_failure(conn, errno);
+				        break;
+				    }
+				}
 				else
 #endif
 				if (ep->events & EPOLLOUT) {
@@ -1649,7 +1667,13 @@ core_loop(void)
 	                    if (conn->state == S_CONNECTING) {
 #ifdef HAVE_SSL
 	                        if (param.use_ssl)
-	                             core_ssl_connect(conn);
+				{
+	                            if (core_ssl_connect(conn) < 0)
+				    {
+				        conn_failure(conn, errno);
+				        break;
+				    }
+				}
 	                        else
 #endif
 	                        if (is_writable) {
